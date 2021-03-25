@@ -1277,29 +1277,27 @@ var unmarshalTests = []unmarshalTest{
 		ptr: new(map[string]json.Number),
 		err: fmt.Errorf(`strconv.ParseFloat: parsing "invalid": invalid syntax`),
 	},
-	/*
-		// invalid UTF-8 is coerced to valid UTF-8.
-			{
-				in:  "\"hello\xffworld\"", // 148
-				ptr: new(string),
-				out: "hello\ufffdworld",
-			},
-			{
-				in:  "\"hello\xc2\xc2world\"", // 149
-				ptr: new(string),
-				out: "hello\ufffd\ufffdworld",
-			},
-			{
-				in:  "\"hello\xc2\xffworld\"", // 150
-				ptr: new(string),
-				out: "hello\ufffd\ufffdworld",
-			},
-			{
-				in:  "\"hello\xed\xa0\x80\xed\xb0\x80world\"", // 151
-				ptr: new(string),
-				out: "hello\ufffd\ufffd\ufffd\ufffd\ufffd\ufffdworld",
-			},
-	*/
+	// invalid UTF-8 is coerced to valid UTF-8.
+	{
+		in:  "\"hello\xffworld\"", // 148
+		ptr: new(string),
+		out: "hello\ufffdworld",
+	},
+	{
+		in:  "\"hello\xc2\xc2world\"", // 149
+		ptr: new(string),
+		out: "hello\ufffd\ufffdworld",
+	},
+	{
+		in:  "\"hello\xc2\xffworld\"", // 150
+		ptr: new(string),
+		out: "hello\ufffd\ufffdworld",
+	},
+	{
+		in:  "\"hello\xed\xa0\x80\xed\xb0\x80world\"", // 151
+		ptr: new(string),
+		out: "hello\ufffd\ufffd\ufffd\ufffd\ufffd\ufffdworld",
+	},
 }
 
 type All struct {
@@ -2514,7 +2512,6 @@ func TestInvalidUnmarshalText(t *testing.T) {
 	}
 }
 
-/*
 // Test that string option is ignored for invalid types.
 // Issue 9812.
 func TestInvalidStringOption(t *testing.T) {
@@ -2532,13 +2529,11 @@ func TestInvalidStringOption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-
 	err = json.Unmarshal(data, &item)
 	if err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 }
-*/
 
 // Test unmarshal behavior with regards to embedded unexported structs.
 //

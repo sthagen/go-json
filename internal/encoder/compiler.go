@@ -429,6 +429,8 @@ func convertPtrOp(code *Opcode) OpType {
 		return OpBoolPtr
 	case OpBytes:
 		return OpBytesPtr
+	case OpNumber:
+		return OpNumberPtr
 	case OpArray:
 		return OpArrayPtr
 	case OpSlice:
@@ -504,6 +506,7 @@ func compileMarshalJSON(ctx *compileContext) (*Opcode, error) {
 	if !typ.Implements(marshalJSONType) && runtime.PtrTo(typ).Implements(marshalJSONType) {
 		code.AddrForMarshaler = true
 	}
+	code.IsNilableType = isNilableType(typ)
 	ctx.incIndex()
 	return code, nil
 }
@@ -514,6 +517,7 @@ func compileMarshalText(ctx *compileContext) (*Opcode, error) {
 	if !typ.Implements(marshalTextType) && runtime.PtrTo(typ).Implements(marshalTextType) {
 		code.AddrForMarshaler = true
 	}
+	code.IsNilableType = isNilableType(typ)
 	ctx.incIndex()
 	return code, nil
 }
@@ -889,8 +893,17 @@ func compileListElem(ctx *compileContext) (*Opcode, error) {
 		return compileMarshalJSON(ctx)
 	case !typ.Implements(marshalTextType) && runtime.PtrTo(typ).Implements(marshalTextType):
 		return compileMarshalText(ctx)
+	case typ.Kind() == reflect.Map:
+		return compilePtr(ctx.withType(runtime.PtrTo(typ)))
 	default:
-		return compile(ctx, false)
+		code, err := compile(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		if code.Op == OpMapPtr {
+			code.PtrNum++
+		}
+		return code, nil
 	}
 }
 
@@ -980,7 +993,14 @@ func compileMapValue(ctx *compileContext) (*Opcode, error) {
 	case reflect.Map:
 		return compilePtr(ctx.withType(runtime.PtrTo(ctx.typ)))
 	default:
-		return compile(ctx, false)
+		code, err := compile(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		if code.Op == OpMapPtr {
+			code.PtrNum++
+		}
+		return code, nil
 	}
 }
 
@@ -1256,11 +1276,9 @@ func isNilableType(typ *runtime.Type) bool {
 	switch typ.Kind() {
 	case reflect.Ptr:
 		return true
-	case reflect.Interface:
-		return true
-	case reflect.Slice:
-		return true
 	case reflect.Map:
+		return true
+	case reflect.Func:
 		return true
 	default:
 		return false
@@ -1399,6 +1417,8 @@ func compileStruct(ctx *compileContext, isPtr bool) (*Opcode, error) {
 			Indirect:         indirect,
 			Nilcheck:         nilcheck,
 			AddrForMarshaler: addrForMarshaler,
+			IsNextOpPtrType:  strings.Contains(valueCode.Op.String(), "Ptr"),
+			IsNilableType:    isNilableType,
 		}
 		if fieldIdx == 0 {
 			fieldCode.HeadIdx = fieldCode.Idx
