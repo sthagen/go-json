@@ -1805,3 +1805,91 @@ func TestIssue104(t *testing.T) {
 		t.Fatalf("expect %q but got %q", string(expect), string(got))
 	}
 }
+
+func TestIssue179(t *testing.T) {
+	data := `
+{
+  "t": {
+    "t1": false,
+    "t2": 0,
+    "t3": "",
+    "t4": [],
+    "t5": null,
+    "t6": null
+  }
+}`
+	type T struct {
+		X struct {
+			T1 bool        `json:"t1,omitempty"`
+			T2 float64     `json:"t2,omitempty"`
+			T3 string      `json:"t3,omitempty"`
+			T4 []string    `json:"t4,omitempty"`
+			T5 *struct{}   `json:"t5,omitempty"`
+			T6 interface{} `json:"t6,omitempty"`
+		} `json:"x"`
+	}
+	var v T
+	if err := stdjson.Unmarshal([]byte(data), &v); err != nil {
+		t.Fatal(err)
+	}
+	var v2 T
+	if err := json.Unmarshal([]byte(data), &v2); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Fatalf("failed to decode: expected %v got %v", v, v2)
+	}
+	b1, err := stdjson.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, err := json.Marshal(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(b1, b2) {
+		t.Fatalf("failed to equal encoded result: expected %q but got %q", b1, b2)
+	}
+}
+
+func TestIssue180(t *testing.T) {
+	v := struct {
+		T struct {
+			T1 bool        `json:"t1"`
+			T2 float64     `json:"t2"`
+			T3 string      `json:"t3"`
+			T4 []string    `json:"t4"`
+			T5 *struct{}   `json:"t5"`
+			T6 interface{} `json:"t6"`
+			T7 [][]string  `json:"t7"`
+		} `json:"t"`
+	}{
+		T: struct {
+			T1 bool        `json:"t1"`
+			T2 float64     `json:"t2"`
+			T3 string      `json:"t3"`
+			T4 []string    `json:"t4"`
+			T5 *struct{}   `json:"t5"`
+			T6 interface{} `json:"t6"`
+			T7 [][]string  `json:"t7"`
+		}{
+			T4: []string{},
+			T7: [][]string{
+				[]string{""},
+				[]string{"hello", "world"},
+				[]string{},
+			},
+		},
+	}
+	b1, err := stdjson.MarshalIndent(v, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(b1, b2) {
+		t.Fatalf("failed to equal encoded result: expected %s but got %s", string(b1), string(b2))
+	}
+}

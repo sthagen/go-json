@@ -338,7 +338,6 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 				code = code.Next
 				store(ctxptr, code.Idx, uintptr(slice.Data))
 			} else {
-				b = appendIndent(ctx, b, code.Indent)
 				b = append(b, '[', ']', ',', '\n')
 				code = code.End.Next
 			}
@@ -385,7 +384,6 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 				code = code.Next
 				store(ctxptr, code.Idx, p)
 			} else {
-				b = appendIndent(ctx, b, code.Indent)
 				b = append(b, '[', ']', ',', '\n')
 				code = code.End.Next
 			}
@@ -2578,7 +2576,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			}
 			p += code.Offset
 			slice := ptrToSlice(p)
-			if slice.Data == nil {
+			if slice.Len == 0 {
 				code = code.NextField
 			} else {
 				b = appendIndent(ctx, b, code.Indent+1)
@@ -4061,7 +4059,7 @@ func Run(ctx *encoder.RuntimeContext, b []byte, codeSet *encoder.OpcodeSet, opt 
 			p := load(ctxptr, code.HeadIdx)
 			p += code.Offset
 			slice := ptrToSlice(p)
-			if slice.Data == nil {
+			if slice.Len == 0 {
 				code = code.NextField
 			} else {
 				b = appendIndent(ctx, b, code.Indent)
