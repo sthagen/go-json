@@ -2,6 +2,7 @@ package json_test
 
 import (
 	"bytes"
+	"context"
 	"encoding"
 	stdjson "encoding/json"
 	"errors"
@@ -1891,5 +1892,144 @@ func TestIssue180(t *testing.T) {
 	}
 	if !bytes.Equal(b1, b2) {
 		t.Fatalf("failed to equal encoded result: expected %s but got %s", string(b1), string(b2))
+	}
+}
+
+func TestIssue235(t *testing.T) {
+	type TaskMessage struct {
+		Type      string
+		Payload   map[string]interface{}
+		UniqueKey string
+	}
+	msg := TaskMessage{
+		Payload: map[string]interface{}{
+			"sent_at": map[string]interface{}{
+				"Time":  "0001-01-01T00:00:00Z",
+				"Valid": false,
+			},
+		},
+	}
+	if _, err := json.Marshal(msg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEncodeMapKeyTypeInterface(t *testing.T) {
+	if _, err := json.Marshal(map[interface{}]interface{}{"a": 1}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+type marshalContextKey struct{}
+
+type marshalContextStructType struct{}
+
+func (t *marshalContextStructType) MarshalJSON(ctx context.Context) ([]byte, error) {
+	v := ctx.Value(marshalContextKey{})
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("failed to propagate parent context.Context")
+	}
+	if s != "hello" {
+		return nil, fmt.Errorf("failed to propagate parent context.Context")
+	}
+	return []byte(`"success"`), nil
+}
+
+func TestEncodeContextOption(t *testing.T) {
+	t.Run("MarshalContext", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), marshalContextKey{}, "hello")
+		b, err := json.MarshalContext(ctx, &marshalContextStructType{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(b) != `"success"` {
+			t.Fatal("failed to encode with MarshalerContext")
+		}
+	})
+	t.Run("EncodeContext", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), marshalContextKey{}, "hello")
+		buf := bytes.NewBuffer([]byte{})
+		if err := json.NewEncoder(buf).EncodeContext(ctx, &marshalContextStructType{}); err != nil {
+			t.Fatal(err)
+		}
+		if buf.String() != "\"success\"\n" {
+			t.Fatal("failed to encode with EncodeContext")
+		}
+	})
+}
+
+func TestInterfaceWithPointer(t *testing.T) {
+	var (
+		ivalue   int         = 10
+		uvalue   uint        = 20
+		svalue   string      = "value"
+		bvalue   bool        = true
+		fvalue   float32     = 3.14
+		nvalue   json.Number = "1.23"
+		structv              = struct{ A int }{A: 10}
+		slice                = []int{1, 2, 3, 4}
+		array                = [4]int{1, 2, 3, 4}
+		mapvalue             = map[string]int{"a": 1}
+	)
+	data := map[string]interface{}{
+		"ivalue":  ivalue,
+		"uvalue":  uvalue,
+		"svalue":  svalue,
+		"bvalue":  bvalue,
+		"fvalue":  fvalue,
+		"nvalue":  nvalue,
+		"struct":  structv,
+		"slice":   slice,
+		"array":   array,
+		"map":     mapvalue,
+		"pivalue": &ivalue,
+		"puvalue": &uvalue,
+		"psvalue": &svalue,
+		"pbvalue": &bvalue,
+		"pfvalue": &fvalue,
+		"pnvalue": &nvalue,
+		"pstruct": &structv,
+		"pslice":  &slice,
+		"parray":  &array,
+		"pmap":    &mapvalue,
+	}
+	expected, err := stdjson.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, "interface{}", string(expected), string(actual))
+}
+
+func TestIssue263(t *testing.T) {
+	type Foo struct {
+		A []string `json:"a"`
+		B int      `json:"b"`
+	}
+
+	type MyStruct struct {
+		Foo *Foo `json:"foo,omitempty"`
+	}
+
+	s := MyStruct{
+		Foo: &Foo{
+			A: []string{"ls -lah"},
+			B: 0,
+		},
+	}
+	expected, err := stdjson.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(expected, actual) {
+		t.Fatalf("expected:[%s] but got:[%s]", string(expected), string(actual))
 	}
 }

@@ -2,6 +2,7 @@ package json_test
 
 import (
 	"bytes"
+	"context"
 	"encoding"
 	stdjson "encoding/json"
 	"errors"
@@ -151,6 +152,7 @@ func Test_Decoder(t *testing.T) {
 			B string `json:"str"`
 			C bool
 			D *T
+			E func()
 		}
 		content := []byte(`
 {
@@ -161,7 +163,8 @@ func Test_Decoder(t *testing.T) {
     "aa": 2,
     "bb": "world",
     "cc": true
-  }
+  },
+  "e"   : null
 }`)
 		assertErr(t, json.Unmarshal(content, &v))
 		assertEq(t, "struct.A", 123, v.A)
@@ -170,6 +173,7 @@ func Test_Decoder(t *testing.T) {
 		assertEq(t, "struct.D.AA", 2, v.D.AA)
 		assertEq(t, "struct.D.BB", "world", v.D.BB)
 		assertEq(t, "struct.D.CC", true, v.D.CC)
+		assertEq(t, "struct.E", true, v.E == nil)
 		t.Run("struct.field null", func(t *testing.T) {
 			var v struct {
 				A string
@@ -178,8 +182,9 @@ func Test_Decoder(t *testing.T) {
 				D map[string]interface{}
 				E [2]string
 				F interface{}
+				G func()
 			}
-			assertErr(t, json.Unmarshal([]byte(`{"a":null,"b":null,"c":null,"d":null,"e":null,"f":null}`), &v))
+			assertErr(t, json.Unmarshal([]byte(`{"a":null,"b":null,"c":null,"d":null,"e":null,"f":null,"g":null}`), &v))
 			assertEq(t, "string", v.A, "")
 			assertNeq(t, "[]string", v.B, nil)
 			assertEq(t, "[]string", len(v.B), 0)
@@ -190,6 +195,7 @@ func Test_Decoder(t *testing.T) {
 			assertNeq(t, "array", v.E, nil)
 			assertEq(t, "array", len(v.E), 2)
 			assertEq(t, "interface{}", v.F, nil)
+			assertEq(t, "nilfunc", true, v.G == nil)
 		})
 	})
 	t.Run("interface", func(t *testing.T) {
@@ -237,6 +243,11 @@ func Test_Decoder(t *testing.T) {
 			assertErr(t, json.Unmarshal([]byte(`null`), &v))
 			assertEq(t, "interface", nil, v)
 		})
+	})
+	t.Run("func", func(t *testing.T) {
+		var v func()
+		assertErr(t, json.Unmarshal([]byte(`null`), &v))
+		assertEq(t, "nilfunc", true, v == nil)
 	})
 }
 
@@ -1147,7 +1158,7 @@ var unmarshalTests = []unmarshalTest{
 	{in: `{"B":"true"}`, ptr: new(B), out: B{true}, golden: true},                                                               // 127
 	{in: `{"B":"false"}`, ptr: new(B), out: B{false}, golden: true},                                                             // 128
 	{in: `{"B": "maybe"}`, ptr: new(B), err: errors.New(`json: bool unexpected end of JSON input`)},                             // 129
-	{in: `{"B": "tru"}`, ptr: new(B), err: errors.New(`json: invalid character as bool(true)`)},                                 // 130
+	{in: `{"B": "tru"}`, ptr: new(B), err: errors.New(`json: invalid character as true`)},                                       // 130
 	{in: `{"B": "False"}`, ptr: new(B), err: errors.New(`json: bool unexpected end of JSON input`)},                             // 131
 	{in: `{"B": "null"}`, ptr: new(B), out: B{false}},                                                                           // 132
 	{in: `{"B": "nul"}`, ptr: new(B), err: errors.New(`json: invalid character as null`)},                                       // 133
@@ -3052,7 +3063,7 @@ func TestMultipleDecodeWithRawMessage(t *testing.T) {
 type intUnmarshaler int
 
 func (u *intUnmarshaler) UnmarshalJSON(b []byte) error {
-	if *u != 0 {
+	if *u != 0 && *u != 10 {
 		return fmt.Errorf("failed to decode of slice with int unmarshaler")
 	}
 	*u = 10
@@ -3062,7 +3073,7 @@ func (u *intUnmarshaler) UnmarshalJSON(b []byte) error {
 type arrayUnmarshaler [5]int
 
 func (u *arrayUnmarshaler) UnmarshalJSON(b []byte) error {
-	if (*u)[0] != 0 {
+	if (*u)[0] != 0 && (*u)[0] != 10 {
 		return fmt.Errorf("failed to decode of slice with array unmarshaler")
 	}
 	(*u)[0] = 10
@@ -3072,7 +3083,7 @@ func (u *arrayUnmarshaler) UnmarshalJSON(b []byte) error {
 type mapUnmarshaler map[string]int
 
 func (u *mapUnmarshaler) UnmarshalJSON(b []byte) error {
-	if len(*u) != 0 {
+	if len(*u) != 0 && len(*u) != 1 {
 		return fmt.Errorf("failed to decode of slice with map unmarshaler")
 	}
 	*u = map[string]int{"a": 10}
@@ -3080,14 +3091,16 @@ func (u *mapUnmarshaler) UnmarshalJSON(b []byte) error {
 }
 
 type structUnmarshaler struct {
-	A int
+	A        int
+	notFirst bool
 }
 
 func (u *structUnmarshaler) UnmarshalJSON(b []byte) error {
-	if u.A != 0 {
+	if !u.notFirst && u.A != 0 {
 		return fmt.Errorf("failed to decode of slice with struct unmarshaler")
 	}
 	u.A = 10
+	u.notFirst = true
 	return nil
 }
 
@@ -3197,6 +3210,29 @@ func TestSliceElemUnmarshaler(t *testing.T) {
 			t.Fatalf("failed to decode of slice with struct unmarshaler: %v", v)
 		}
 	})
+}
+
+type keepRefTest struct {
+	A int
+	B string
+}
+
+func (t *keepRefTest) UnmarshalJSON(data []byte) error {
+	v := []interface{}{&t.A, &t.B}
+	return json.Unmarshal(data, &v)
+}
+
+func TestKeepReferenceSlice(t *testing.T) {
+	var v keepRefTest
+	if err := json.Unmarshal([]byte(`[54,"hello"]`), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.A != 54 {
+		t.Fatal("failed to keep reference for slice")
+	}
+	if v.B != "hello" {
+		t.Fatal("failed to keep reference for slice")
+	}
 }
 
 func TestInvalidTopLevelValue(t *testing.T) {
@@ -3507,4 +3543,159 @@ func TestDecodeBackSlash(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestIssue218(t *testing.T) {
+	type A struct {
+		X int
+	}
+	type B struct {
+		Y int
+	}
+	type S struct {
+		A *A `json:"a,omitempty"`
+		B *B `json:"b,omitempty"`
+	}
+	tests := []struct {
+		name     string
+		given    []S
+		expected []S
+	}{
+		{
+			name: "A should be correct",
+			given: []S{{
+				A: &A{
+					X: 1,
+				},
+			}},
+			expected: []S{{
+				A: &A{
+					X: 1,
+				},
+			}},
+		},
+		{
+			name: "B should be correct",
+			given: []S{{
+				B: &B{
+					Y: 2,
+				},
+			}},
+			expected: []S{{
+				B: &B{
+					Y: 2,
+				},
+			}},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := json.NewEncoder(&buf).Encode(test.given); err != nil {
+				t.Fatal(err)
+			}
+			var actual []S
+			if err := json.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&actual); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(test.expected, actual) {
+				t.Fatalf("mismatch value: expected %v but got %v", test.expected, actual)
+			}
+		})
+	}
+}
+
+func TestDecodeEscapedCharField(t *testing.T) {
+	b := []byte(`{"\u6D88\u606F":"\u6D88\u606F"}`)
+	t.Run("unmarshal", func(t *testing.T) {
+		v := struct {
+			Msg string `json:"消息"`
+		}{}
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal([]byte(v.Msg), []byte("消息")) {
+			t.Fatal("failed to decode unicode char")
+		}
+	})
+	t.Run("stream", func(t *testing.T) {
+		v := struct {
+			Msg string `json:"消息"`
+		}{}
+		if err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&v); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal([]byte(v.Msg), []byte("消息")) {
+			t.Fatal("failed to decode unicode char")
+		}
+	})
+}
+
+type unmarshalContextKey struct{}
+
+type unmarshalContextStructType struct {
+	v int
+}
+
+func (t *unmarshalContextStructType) UnmarshalJSON(ctx context.Context, b []byte) error {
+	v := ctx.Value(unmarshalContextKey{})
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("failed to propagate parent context.Context")
+	}
+	if s != "hello" {
+		return fmt.Errorf("failed to propagate parent context.Context")
+	}
+	t.v = 100
+	return nil
+}
+
+func TestDecodeContextOption(t *testing.T) {
+	src := []byte("10")
+	buf := bytes.NewBuffer(src)
+
+	t.Run("UnmarshalContext", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), unmarshalContextKey{}, "hello")
+		var v unmarshalContextStructType
+		if err := json.UnmarshalContext(ctx, src, &v); err != nil {
+			t.Fatal(err)
+		}
+		if v.v != 100 {
+			t.Fatal("failed to decode with context")
+		}
+	})
+	t.Run("DecodeContext", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), unmarshalContextKey{}, "hello")
+		var v unmarshalContextStructType
+		if err := json.NewDecoder(buf).DecodeContext(ctx, &v); err != nil {
+			t.Fatal(err)
+		}
+		if v.v != 100 {
+			t.Fatal("failed to decode with context")
+		}
+	})
+}
+
+func TestIssue251(t *testing.T) {
+	array := [3]int{1, 2, 3}
+	err := stdjson.Unmarshal([]byte("[ ]"), &array)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(array)
+
+	array = [3]int{1, 2, 3}
+	err = json.Unmarshal([]byte("[ ]"), &array)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(array)
+
+	array = [3]int{1, 2, 3}
+	err = json.NewDecoder(strings.NewReader(`[ ]`)).Decode(&array)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(array)
 }
